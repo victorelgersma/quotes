@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="csrf-token" content="<?php echo e(csrf_token()); ?>">
+    <title><?php echo e(config('app.name', 'Quotes')); ?></title>
+    <?php echo app('Illuminate\Foundation\Vite')(['resources/css/app.css', 'resources/js/app.js']); ?>
+    <script defer src="https://cdnjs.cloudflare.com/ajax/libs/alpinejs/3.14.1/cdn.min.js"></script>
+</head>
+<body class="h-full bg-white text-gray-900 dark:bg-gray-950 dark:text-gray-100 antialiased">
+    <div class="min-h-full flex flex-col">
+        <nav class="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-800">
+            <div class="flex items-center gap-4">
+                <a href="<?php echo e(route('quotes.index')); ?>" class="font-semibold tracking-tight text-lg">Quotes</a>
+                <?php if(auth()->guard()->check()): ?>
+                    <a href="<?php echo e(route('tags.index')); ?>" class="text-sm text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100">
+                        Tags
+                    </a>
+                <?php endif; ?>
+            </div>
+            <?php if(auth()->guard()->check()): ?>
+                <form method="POST" action="<?php echo e(route('logout')); ?>">
+                    <?php echo csrf_field(); ?>
+                    <button type="submit" class="text-sm text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100">
+                        Log out
+                    </button>
+                </form>
+            <?php endif; ?>
+        </nav>
+
+        <main class="flex-1">
+            <?php echo $__env->yieldContent('content'); ?>
+        </main>
+
+        <footer class="px-6 py-4 text-center text-xs text-gray-400 dark:text-gray-600 border-t border-gray-200 dark:border-gray-800">
+            <a
+                href="https://github.com/victorelgersma/quotes.vjbe.net"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="inline-flex items-center gap-1.5 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="w-4 h-4">
+                    <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/>
+                </svg>
+                <span>View source on GitHub</span>
+            </a>
+        </footer>
+    </div>
+
+    <script>
+        // Lets people jump between quote cards with the Tab key,
+        // Ctrl+Shift+Left/Right, or Cmd+Left/Right — whichever is easiest
+        // on their platform. Plain Tab still works everywhere via native
+        // browser focus order (every card has tabindex="0"); this just
+        // adds the extra shortcuts and wraps focus at the ends.
+        document.addEventListener('keydown', function (e) {
+            const cards = Array.from(document.querySelectorAll('[data-quote-card]'));
+            if (cards.length === 0) return;
+
+            const isNext = (e.key === 'ArrowRight' && e.metaKey)
+                || (e.key === 'ArrowRight' && e.ctrlKey && e.shiftKey);
+            const isPrev = (e.key === 'ArrowLeft' && e.metaKey)
+                || (e.key === 'ArrowLeft' && e.ctrlKey && e.shiftKey);
+
+            if (!isNext && !isPrev) return;
+
+            e.preventDefault();
+
+            const active = document.activeElement;
+            const currentIndex = cards.indexOf(active);
+
+            const nextIndex = currentIndex === -1
+                ? 0
+                : isNext
+                    ? (currentIndex + 1) % cards.length
+                    : (currentIndex - 1 + cards.length) % cards.length;
+
+            cards[nextIndex].focus();
+        });
+
+        // Alpine component powering the tag-chip input: typing a comma
+        // (or pressing Enter) immediately turns the current draft text
+        // into a chip. This runs as a plain (non-deferred) script, so it
+        // registers on window before Alpine's deferred script boots and
+        // starts evaluating x-data="tagInput(...)" attributes.
+        //
+        // Second argument is the list of the user's existing tag names;
+        // "suggestions" filters that list against the current draft text
+        // for the autocomplete dropdown, and arrow keys move a highlight
+        // through it.
+        window.tagInput = function (initialTags, existingTagNames) {
+            return {
+                tags: Array.isArray(initialTags) ? initialTags.slice() : [],
+                availableTags: Array.isArray(existingTagNames) ? existingTagNames.slice() : [],
+                draft: '',
+                highlightedIndex: -1,
+                get suggestions() {
+                    const q = this.draft.trim().toLowerCase();
+                    if (q === '') return [];
+                    const already = this.tags.map(t => t.toLowerCase());
+                    return this.availableTags
+                        .filter(name => name.toLowerCase().includes(q))
+                        .filter(name => !already.includes(name.toLowerCase()))
+                        .slice(0, 6);
+                },
+                addTag(name) {
+                    const value = (name ?? this.draft).trim().replace(/,+$/, '').trim();
+                    this.draft = '';
+                    this.highlightedIndex = -1;
+                    if (value === '') return;
+                    const lower = value.toLowerCase();
+                    if (!this.tags.some(t => t.toLowerCase() === lower)) {
+                        this.tags.push(value);
+                    }
+                },
+                selectHighlighted() {
+                    const options = this.suggestions;
+                    if (this.highlightedIndex >= 0 && options[this.highlightedIndex]) {
+                        this.addTag(options[this.highlightedIndex]);
+                    } else {
+                        this.addTag();
+                    }
+                },
+                moveHighlight(delta) {
+                    const count = this.suggestions.length;
+                    if (count === 0) {
+                        this.highlightedIndex = -1;
+                        return;
+                    }
+                    this.highlightedIndex = (this.highlightedIndex + delta + count) % count;
+                },
+                removeTag(index) {
+                    this.tags.splice(index, 1);
+                },
+                removeLastTag() {
+                    if (this.draft === '' && this.tags.length > 0) {
+                        this.tags.pop();
+                    }
+                },
+            };
+        };
+    </script>
+</body>
+</html>
+<?php /**PATH /Users/victorelgersma/dev/quotes/resources/views/layouts/app.blade.php ENDPATH**/ ?>
